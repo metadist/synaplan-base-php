@@ -21,9 +21,9 @@ RUN git clone https://github.com/ggerganov/whisper.cpp.git /tmp/whisper.cpp && \
     cmake --build build --config Release -j$(nproc)
 
 # ============================================================================
-# Stage 2: Final Image - FrankenPHP + PHP 8.3
+# Stage 2: Final Image - FrankenPHP + PHP 8.4
 # ============================================================================
-FROM dunglas/frankenphp:php8.3-bookworm
+FROM dunglas/frankenphp:php8.4-bookworm
 
 # Install runtime and build dependencies, build PHP extensions, then cleanup
 # This is done in a single RUN to minimize layer size
