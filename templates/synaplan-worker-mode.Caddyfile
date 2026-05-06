@@ -1,0 +1,37 @@
+# =============================================================================
+# synaplan-base-php :: FrankenPHP worker-mode snippet (PROD)
+# -----------------------------------------------------------------------------
+# Materialized at /etc/caddy/synaplan-worker-mode.Caddyfile by the configure
+# shim when APP_ENV=prod and FRANKENPHP_WORKER_ENABLED is not "0". The
+# downstream Caddyfile imports this from inside its global `{ ... }` block.
+#
+# In dev (or with worker mode disabled), the configure shim instead writes an
+# import-safe stub containing only the bare `frankenphp` directive so PHP
+# still gets handled, but no kernel pre-boot happens.
+#
+# Worker mode boots the Symfony Kernel ONCE per worker process and reuses it
+# for every subsequent request — typical 3-10x throughput improvement on
+# Symfony, with p99 cut roughly in half because PHP no longer pays bootstrap
+# cost on every request.
+#
+# 16 workers fits the medium node profile (8 cores, 2 workers/core,
+# ~512MB peak per worker = 8GB peak). Tune FRANKENPHP_WORKER_NUM down if
+# you only have 4GB available to PHP, or up if you have spare cores.
+#
+# Memory-leak mitigation: runtime/frankenphp-symfony recycles each worker
+# after `frankenphp_loop_max` requests (default 500, baked into the runtime
+# package). Set FRANKENPHP_LOOP_MAX env var on the container to override.
+# Note: FrankenPHP's experimental Caddyfile-level `max_requests` directive
+# is NOT used here because it isn't yet shipped in php8.4-bookworm.
+# =============================================================================
+
+frankenphp {
+	worker {
+		# The Symfony app's standard public/index.php IS the worker entrypoint —
+		# runtime/frankenphp-symfony selects worker behavior via the APP_RUNTIME
+		# env var below, no separate worker.php needed.
+		file "/var/www/backend/public/index.php"
+		num  {$FRANKENPHP_WORKER_NUM:16}
+		env  APP_RUNTIME "Runtime\\FrankenPhpSymfony\\Runtime"
+	}
+}

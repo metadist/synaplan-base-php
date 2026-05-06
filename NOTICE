@@ -1,0 +1,24 @@
+synaplan-base-php
+Copyright 2024-2026 Metadist (https://metadist.de) and contributors.
+
+This product includes software developed by:
+  - The Metadist team and the Synaplan open-source community.
+
+It is built on top of (and redistributes binaries from) the following
+upstream open-source projects, each governed by its own license:
+
+  - FrankenPHP                — github.com/php/frankenphp                    (MIT)
+  - PHP                       — github.com/php/php-src                        (PHP License v3.01)
+  - Caddy Server              — github.com/caddyserver/caddy                  (Apache-2.0)
+  - whisper.cpp               — github.com/ggerganov/whisper.cpp              (MIT)
+  - Composer                  — github.com/composer/composer                  (MIT)
+  - protoc / Protocol Buffers — github.com/protocolbuffers/protobuf           (BSD-3-Clause)
+  - PHP extensions: APCu, igbinary, gRPC, Imagick, Intl, Sodium, GD,
+    PDO_MySQL, MySQLi, exif, pcntl, bcmath, ZIP, FFI, IMAP, OPcache
+                                                                              (PHP License v3.01 / BSD / MIT)
+  - Debian packages: ImageMagick, Ghostscript, poppler-utils, ffmpeg,
+    libopenblas, libavcodec-extra, c-client/IMAP, krb5
+                                                                              (various — see /usr/share/doc inside the image)
+
+Run `docker run --rm <image> /bin/bash -c 'ls /usr/share/doc/'` for the full
+list of bundled Debian package licenses.
