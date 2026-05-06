@@ -12,6 +12,15 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: metadist/synaplan-base-php
 
+# Collapse concurrent runs on the same ref so rapid-fire pushes (e.g. merging
+# several Renovate PRs in succession) don't trigger N parallel image builds.
+# Only the most recent run for a given (workflow, ref) survives; earlier
+# in-flight runs are cancelled. PR builds are scoped per-PR ref so opening
+# a new PR doesn't disturb someone else's CI.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   docker-build:
     name: Build Docker Image
