@@ -22,7 +22,7 @@
 # after `frankenphp_loop_max` requests (default 500, baked into the runtime
 # package). Set FRANKENPHP_LOOP_MAX env var on the container to override.
 # Note: FrankenPHP's experimental Caddyfile-level `max_requests` directive
-# is NOT used here because it isn't yet shipped in php8.4-bookworm.
+# is NOT used here because it isn't yet shipped in php8.5-bookworm.
 # =============================================================================
 
 frankenphp {

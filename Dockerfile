@@ -21,9 +21,9 @@ RUN git clone https://github.com/ggerganov/whisper.cpp.git /tmp/whisper.cpp && \
     cmake --build build --config Release -j$(nproc)
 
 # ============================================================================
-# Stage 2: Final Image - FrankenPHP + PHP 8.4
+# Stage 2: Final Image - FrankenPHP + PHP 8.5
 # ============================================================================
-FROM dunglas/frankenphp:php8.4-bookworm
+FROM dunglas/frankenphp:php8.5-bookworm
 
 # Install runtime and build dependencies, build PHP extensions, then cleanup
 # This is done in a single RUN to minimize layer size
@@ -104,7 +104,7 @@ ENV WHISPER_BINARY=/usr/local/bin/whisper \
     FFMPEG_BINARY=/usr/bin/ffmpeg
 
 # ============================================================================
-# PHP 8.4 runtime tuning (OPcache + JIT, realpath cache, uploads, hardening)
+# PHP 8.5 runtime tuning (OPcache + JIT, realpath cache, uploads, hardening)
 # ----------------------------------------------------------------------------
 # All settings live in /usr/local/etc/php/conf.d/ as separate ini files so
 # downstream images and operators can override individual concerns without
@@ -140,7 +140,7 @@ RUN chmod 0755 /usr/local/bin/synaplan-php-configure && \
 # OCI image labels: traceability for `docker inspect` and registry consumers.
 LABEL org.opencontainers.image.source="https://github.com/metadist/synaplan-base-php" \
       org.opencontainers.image.title="synaplan-base-php" \
-      org.opencontainers.image.description="FrankenPHP + PHP 8.4 base image tuned for Synaplan (OPcache 384M + tracing JIT, APCu, igbinary, whisper.cpp, gRPC, ImageMagick) — production defaults with APP_ENV=dev override." \
+      org.opencontainers.image.description="FrankenPHP + PHP 8.5 base image tuned for Synaplan (OPcache 384M + tracing JIT, APCu, igbinary, whisper.cpp, gRPC, ImageMagick) — production defaults with APP_ENV=dev override." \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.vendor="Metadist" \
       org.opencontainers.image.documentation="https://github.com/metadist/synaplan-base-php#readme"

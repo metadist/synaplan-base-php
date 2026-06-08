@@ -1,6 +1,6 @@
 # synaplan-base-php
 
-Production-tuned FrankenPHP + PHP 8.4 base image for the [Synaplan](https://github.com/metadist/synaplan) AI knowledge platform and its plugins.
+Production-tuned FrankenPHP + PHP 8.5 base image for the [Synaplan](https://github.com/metadist/synaplan) AI knowledge platform and its plugins.
 
 This image is **the foundation for both the production cluster and the open-source dev image**, so the same opcode cache sizing, JIT tuning, error hardening, and runtime behavior shows up everywhere — without each downstream Dockerfile having to re-derive sensible defaults.
 
@@ -14,7 +14,7 @@ ghcr.io/metadist/synaplan-base-php:<tag>
 
 | Component | Version / source | Notes |
 |-----------|------------------|-------|
-| FrankenPHP | `dunglas/frankenphp:php8.4-bookworm` | PHP 8.4, mod_caddy, worker mode capable |
+| FrankenPHP | `dunglas/frankenphp:php8.5-bookworm` | PHP 8.5, mod_caddy, worker mode capable |
 | PHP extensions | `pdo_mysql`, `mysqli`, `exif`, `pcntl`, `bcmath`, `gd`, `imagick`, `zip`, `sodium`, `ffi`, `grpc`, `intl`, `opcache`, `imap`, `apcu`, `igbinary` | |
 | Composer | `composer:latest` | `/usr/bin/composer` |
 | protoc | pinned `33.2` | `/usr/local/bin/protoc` (gRPC client gen) |
@@ -78,7 +78,7 @@ Tunables (env vars on the container):
 | `FRANKENPHP_WORKER_NUM` | `16` | Number of worker processes (~2 per core on the medium profile) |
 | `FRANKENPHP_WORKER_ENABLED` | unset (= on) | Set to `0` or `false` to fall back to classic SAPI |
 
-Worker recycling (memory-leak mitigation) is handled by `runtime/frankenphp-symfony`'s `frankenphp_loop_max` option — default **500 requests per worker**, settable via the matching package option in `composer.json` extras or the `FRANKENPHP_LOOP_MAX` env var. The Caddyfile-level `max_requests` directive is not used because it isn't shipped in the `php8.4-bookworm` base yet.
+Worker recycling (memory-leak mitigation) is handled by `runtime/frankenphp-symfony`'s `frankenphp_loop_max` option — default **500 requests per worker**, settable via the matching package option in `composer.json` extras or the `FRANKENPHP_LOOP_MAX` env var. The Caddyfile-level `max_requests` directive is not used because it isn't shipped in the `php8.5-bookworm` base yet.
 
 The downstream Symfony app must:
 
