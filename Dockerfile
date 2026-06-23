@@ -53,11 +53,15 @@ RUN set -eux; \
     # Install PHP extensions (requires -dev packages)
     # apcu + igbinary: free perf wins for Symfony cache (cache.adapter.apcu) and
     # binary serialization of cache payloads (~30% smaller than serialize()).
+    # redis (phpredis): required by Symfony Messenger's Redis Streams transport
+    # (symfony/redis-messenger), which the Synaplan worker consumes. Baked in
+    # here so downstream images don't each re-compile it via pecl on every
+    # build — a slow step, especially under qemu emulation on Apple Silicon.
     install-php-extensions \
         pdo_mysql mysqli \
         exif pcntl bcmath gd imagick zip sodium ffi \
         grpc intl opcache imap \
-        apcu igbinary && \
+        apcu igbinary redis && \
     # Remove build dependencies to save space (~350-400MB)
     apt-get purge -y --auto-remove \
         libpng-dev libonig-dev libxml2-dev libzip-dev \
