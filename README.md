@@ -15,7 +15,7 @@ ghcr.io/metadist/synaplan-base-php:<tag>
 | Component | Version / source | Notes |
 |-----------|------------------|-------|
 | FrankenPHP | `dunglas/frankenphp:php8.5-bookworm` | PHP 8.5, mod_caddy, worker mode capable |
-| PHP extensions | `pdo_mysql`, `mysqli`, `exif`, `pcntl`, `bcmath`, `gd`, `imagick`, `zip`, `sodium`, `ffi`, `grpc`, `intl`, `opcache`, `imap`, `apcu`, `igbinary` | |
+| PHP extensions | `pdo_mysql`, `mysqli`, `exif`, `pcntl`, `bcmath`, `gd`, `imagick`, `zip`, `sodium`, `ffi`, `grpc`, `intl`, `opcache`, `imap`, `apcu`, `igbinary`, `redis` | `redis` (phpredis) backs Symfony Messenger's Redis Streams transport (`symfony/redis-messenger`) |
 | Composer | `composer:latest` | `/usr/bin/composer` |
 | protoc | pinned `33.2` | `/usr/local/bin/protoc` (gRPC client gen) |
 | whisper.cpp | `v1.7.4`, built from source | `/usr/local/bin/whisper`, `whisper-quantize` |
@@ -201,14 +201,15 @@ Sanity-check inside a running container:
 
 ```bash
 docker compose exec backend bash -lc '
-    php -i | grep -E "(opcache|jit|apcu|igbinary|grpc)" | head -40 ;
+    php -i | grep -E "(opcache|jit|apcu|igbinary|grpc|redis)" | head -40 ;
     php --ri opcache | head -25 ;
     php --ri apcu | head -10 ;
+    php --ri redis | head -10 ;
     php -r "echo ini_get(\"upload_max_filesize\"), \"/\", ini_get(\"post_max_size\"), \"\n\";"
 '
 ```
 
-Expected: `opcache.memory_consumption => 384`, `opcache.jit_buffer_size => 128M`, `apcu` present, `200M/220M`.
+Expected: `opcache.memory_consumption => 384`, `opcache.jit_buffer_size => 128M`, `apcu` + `redis` present, `200M/220M`.
 
 ---
 
@@ -227,8 +228,8 @@ Licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE) 
 
 ```bash
 # Inspect license + attributions inside the image:
-docker run --rm ghcr.io/metadist/synaplan-base-php:0.3.0 \
+docker run --rm ghcr.io/metadist/synaplan-base-php:latest \
     cat /usr/local/share/synaplan-base-php/LICENSE
-docker run --rm ghcr.io/metadist/synaplan-base-php:0.3.0 \
+docker run --rm ghcr.io/metadist/synaplan-base-php:latest \
     cat /usr/local/share/synaplan-base-php/NOTICE
 ```
