@@ -87,6 +87,22 @@ The downstream Symfony app must:
 
 ---
 
+## Runtime for multi-task (DAG) routing
+
+Synaplan's [multi-task (DAG) routing](https://github.com/metadist/synaplan#multi-task-dag-routing) — an AI planner that decomposes a request into a directed acyclic graph of capability steps and executes them with live progress — leans directly on what this base image ships. Baking these in once means the planner, the DAG executor, and every capability runner behave identically in the open-source dev image and across the production cluster:
+
+| DAG concern | What the image provides |
+|-------------|-------------------------|
+| **Fast planning + classification on every turn** | Worker mode (kernel booted once per process), `opcache` + tracing `jit`, `apcu` — the extra planner/sorter model round-trips don't pay a cold-boot tax |
+| **Parallel media nodes** (image/video/audio rendered concurrently) | `pcntl` + a clean process model for the short-lived subprocesses the executor spawns, plus `ffmpeg`, `imagick`/Ghostscript/poppler and built-in `whisper.cpp` for the media steps themselves |
+| **Calendar / document capability steps** | `intl`, `zip`, `gd` for `.ics` meeting files and Office-document generation |
+| **Async fan-out & queues** | `redis` (phpredis) backing Symfony Messenger's Redis Streams transport |
+| **gRPC model clients** | `grpc` with fork-safety (`27-synaplan-grpc.ini`) so worker processes stay stable |
+
+None of this is DAG-specific code — it's the same runtime the rest of Synaplan uses — but multi-task routing is the workload that exercises all of it at once (several capabilities, some in parallel, within a single request), which is exactly what the medium-node defaults are sized for.
+
+---
+
 ## Override surface (env vars at container runtime)
 
 The `synaplan-php-configure` shim renders explicit env-var values into `/usr/local/etc/php/conf.d/99-synaplan-env.ini` on every startup. Variables that are **explicitly set** override the baked defaults; unset variables fall through to the ini files.
