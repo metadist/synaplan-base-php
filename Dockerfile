@@ -21,7 +21,23 @@ RUN git clone https://github.com/ggerganov/whisper.cpp.git /tmp/whisper.cpp && \
     cmake --build build --config Release -j$(nproc)
 
 # ============================================================================
-# Stage 2: Final Image - FrankenPHP + PHP 8.5
+# Stage 2: Builder - Compile the gRPC PHP extension
+# ----------------------------------------------------------------------------
+# grpc is by far the most expensive extension to build (large C++ sources, no
+# upstream binary). It lives in its own stage — built from the same FrankenPHP
+# image as the final stage, so the resulting .so matches the PHP API version,
+# ZTS mode, architecture and libc of its target — so that adding a Debian
+# package or another extension below no longer invalidates it. It is then only
+# recompiled when the FrankenPHP base itself moves.
+# ============================================================================
+FROM dunglas/frankenphp:php8.5-bookworm AS grpc-builder
+
+RUN set -eux; \
+    install-php-extensions grpc; \
+    cp "$(php -r 'echo ini_get("extension_dir");')/grpc.so" /tmp/grpc.so
+
+# ============================================================================
+# Stage 3: Final Image - FrankenPHP + PHP 8.5
 # ============================================================================
 FROM dunglas/frankenphp:php8.5-bookworm
 
@@ -60,7 +76,7 @@ RUN set -eux; \
     install-php-extensions \
         pdo_mysql mysqli \
         exif pcntl bcmath gd imagick zip sodium ffi \
-        grpc intl opcache imap \
+        intl opcache imap \
         apcu igbinary redis && \
     # Remove build dependencies to save space (~350-400MB)
     apt-get purge -y --auto-remove \
@@ -73,6 +89,16 @@ RUN set -eux; \
         gcc g++ cpp libgcc-*-dev libstdc++-*-dev libc6-dev \
         libssl-dev libicu-dev && \
     rm -rf /var/lib/apt/lists/*
+
+# Install the gRPC extension built in the grpc-builder stage. pecl grpc links
+# its TLS/protobuf dependencies statically, so the shared objects left in the
+# runtime image are enough — the load is verified here so a future base-image
+# bump that breaks the ABI fails the build instead of the container.
+COPY --from=grpc-builder /tmp/grpc.so /tmp/grpc.so
+RUN set -eux; \
+    mv /tmp/grpc.so "$(php -r 'echo ini_get("extension_dir");')/grpc.so"; \
+    printf 'extension=grpc.so\n' > /usr/local/etc/php/conf.d/docker-php-ext-grpc.ini; \
+    php --ri grpc > /dev/null
 
 # Install protoc (pinned version for consistent proto generation).
 # This version is also used in CI (.github/workflows/ci.yml extracts it via grep).
