@@ -74,13 +74,22 @@ RUN set -eux; \
         libssl-dev libicu-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Install protoc (pinned version for consistent proto generation)
-# This version is also used in CI (.github/workflows/ci.yml extracts it via grep)
+# Install protoc (pinned version for consistent proto generation).
+# This version is also used in CI (.github/workflows/ci.yml extracts it via grep).
+# TARGETARCH is injected by BuildKit (amd64 / arm64); protobuf release assets use
+# x86_64 / aarch_64 (underscore) — map accordingly for multi-arch builds.
 ENV PROTOC_VERSION=33.2
-RUN curl -Lo /tmp/protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" \
-    && unzip -q /tmp/protoc.zip -d /usr/local \
-    && chmod +x /usr/local/bin/protoc \
-    && rm /tmp/protoc.zip
+ARG TARGETARCH
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) PROTOC_ARCH=x86_64 ;; \
+      arm64) PROTOC_ARCH=aarch_64 ;; \
+      *) echo "Unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -Lo /tmp/protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip"; \
+    unzip -q /tmp/protoc.zip -d /usr/local; \
+    chmod +x /usr/local/bin/protoc; \
+    rm /tmp/protoc.zip
 
 # Copy whisper.cpp binaries and libraries from builder stage
 COPY --from=whisper-builder /tmp/whisper.cpp/build/bin/whisper-cli /usr/local/bin/whisper
