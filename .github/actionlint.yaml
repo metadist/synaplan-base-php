@@ -1,0 +1,6 @@
+# actionlint only knows the standard GitHub-hosted runner labels. `ubuntu-latest-m`
+# is the organization's larger runner (16-core linux-x64, runner group
+# "Default Larger Runners", which allows public repositories).
+self-hosted-runner:
+  labels:
+    - ubuntu-latest-m

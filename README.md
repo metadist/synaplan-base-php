@@ -37,14 +37,35 @@ Every push to `main` and every tag publishes **one manifest list covering both p
 
 Pull requests build both platforms too, without pushing, so an arm64-only compile break is caught before merge.
 
+### How CI builds the manifest list
+
+Both platforms are built **natively, in parallel, on a runner of their own architecture** — there is no QEMU in the pipeline. Two of the build's steps compile C/C++ from source (whisper.cpp and the gRPC extension) and emulation made those dominate the wall-clock time of a release.
+
+| Platform | Runner | Notes |
+|----------|--------|-------|
+| `linux/amd64` | `ubuntu-latest-m` | 16-core org larger runner (group *Default Larger Runners*, public repos enabled) |
+| `linux/arm64` | `ubuntu-24.04-arm` | standard GitHub arm64 runner — free and unlimited for public repositories |
+
+Because a per-arch job cannot push a shared tag without clobbering the other, the two jobs push **by digest only** (`push-by-digest=true`, no tag), hand their digest to the `merge` job as an artifact, and that job assembles the tagged manifest list with `docker buildx imagetools create`. The tag therefore appears in GHCR only once both architectures have succeeded. Layer cache is `type=gha` with a **per-arch scope**, so the two jobs don't evict each other's layers.
+
 ### Architecture-dependent parts of the build
 
 Two pieces are resolved per platform rather than hardcoded to x86:
 
 - **protoc** — the pinned `33.2` release asset is selected from `TARGETARCH` (BuildKit's `amd64` / `arm64`) and mapped onto protobuf's naming (`x86_64` / `aarch_64`). An unknown `TARGETARCH` fails the build loudly instead of silently installing the wrong binary.
-- **whisper.cpp** — compiled from source in a separate builder stage for each target, with `GGML_NATIVE=OFF` so the toolchain doesn't emit `-mcpu=native`. That keeps the build working under emulation and keeps the resulting binary portable across CPU generations of the same arch, at the cost of the most aggressive SIMD tuning.
+- **whisper.cpp** — compiled from source in a separate builder stage for each target, with `GGML_NATIVE=OFF` so the toolchain doesn't emit `-mcpu=native`. That keeps the resulting binary portable across CPU generations of the same arch (and keeps an emulated local build working), at the cost of the most aggressive SIMD tuning.
 
 Everything else — the FrankenPHP base, Debian packages, PHP extensions built by `install-php-extensions`, Composer — is already multi-arch upstream.
+
+### Why `grpc` has its own builder stage
+
+`grpc` is the most expensive extension in the image to build, and it used to sit in the same `RUN` layer as the apt packages and every other extension — so adding one Debian package or reordering that list recompiled it from scratch. It now builds in a dedicated `grpc-builder` stage and the final stage copies in just `grpc.so`:
+
+- the compile is an independently cached unit that only re-runs when the FrankenPHP base image itself moves, and it runs in parallel with the whisper.cpp stage;
+- the builder starts `FROM` the *same* FrankenPHP image as the final stage, so the `.so` matches its target's PHP API version, ZTS mode, arch and libc — the reason this must not be split into a separately versioned image or mounted at runtime;
+- the final stage runs `php --ri grpc`, so an ABI mismatch after a base bump fails the build rather than the container.
+
+pecl's `grpc` links its TLS and protobuf dependencies statically, so nothing extra has to be kept in the runtime image for it.
 
 ### Verifying what a tag contains
 
@@ -69,7 +90,7 @@ docker buildx create --use --name synaplan-multiarch
 docker buildx build --platform linux/amd64,linux/arm64 -t synaplan-base-php:dev .
 ```
 
-Note that a multi-platform build can't be loaded into the local Docker image store — use `--push` to a registry, or build one platform at a time with `--load`. Emulated builds are also considerably slower, and the whisper.cpp compile dominates that time; the CI job leans on the GitHub Actions cache (`cache-from`/`cache-to: type=gha`) to avoid paying it on every run.
+Note that a multi-platform build can't be loaded into the local Docker image store — use `--push` to a registry, or build one platform at a time with `--load`. Locally, the foreign arch is emulated and therefore considerably slower, with the whisper.cpp and gRPC compiles dominating; CI avoids that entirely by building each arch on its own native runner (see [How CI builds the manifest list](#how-ci-builds-the-manifest-list)).
 
 ---
 

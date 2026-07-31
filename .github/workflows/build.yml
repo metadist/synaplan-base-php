@@ -22,19 +22,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  docker-build:
-    name: Build and Push Multi-Arch Image
-    runs-on: ubuntu-latest
+  # Each platform is built on a runner of its own architecture — no QEMU. The
+  # gRPC extension and whisper.cpp are compiled from source, which emulation
+  # slowed down by roughly an order of magnitude.
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 16-core org larger runner ("Default Larger Runners" group, which
+          # has allows_public_repositories enabled).
+          - platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-latest-m
+          # No arm64 larger runner exists in the org; the standard GitHub
+          # arm64 runner is free and unlimited for public repositories.
+          - platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -47,7 +61,79 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels)
+      # Tags are applied to the manifest list in the merge job, so only the
+      # per-platform labels/annotations are needed here.
+      - name: Extract metadata (labels, annotations)
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      # Pushed by digest without a tag: the merge job assembles the digests of
+      # all platforms into the tagged manifest list. On pull requests nothing
+      # is pushed — `cacheonly` still proves both architectures compile.
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          outputs: ${{ github.event_name != 'pull_request' && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.REGISTRY, env.IMAGE_NAME) || 'type=cacheonly' }}
+          # Provenance would add an extra manifest per platform that
+          # `imagetools create` does not carry over into the manifest list.
+          provenance: false
+          # Per-arch cache scopes: a shared scope makes the two jobs evict
+          # each other's layers.
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      - name: Export digest
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+
+      - name: Upload digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Create Multi-Arch Manifest
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags)
         id: meta
         uses: docker/metadata-action@v6
         with:
@@ -57,25 +143,17 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=ref,event=pr
 
-      - name: Build and push multi-arch image
-        id: build
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          # type=docker tar cannot hold a multi-arch manifest list — build and
-          # push in one step. PRs still build both arches (push: false) to prove
-          # arm64 compiles; the result is discarded.
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Record multi-arch index digest
-        if: github.event_name != 'pull_request'
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
         run: |
-          echo "Multi-arch index digest: ${{ steps.build.outputs.digest }}"
-          echo "digest=${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+          # shellcheck disable=SC2046 # word splitting builds the -t / digest argument lists
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "${REGISTRY}/${IMAGE_NAME}@sha256:%s " *)
+
+      - name: Inspect manifest list
+        run: |
+          docker buildx imagetools inspect "${REGISTRY}/${IMAGE_NAME}:${VERSION}" | tee -a "$GITHUB_STEP_SUMMARY"
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
