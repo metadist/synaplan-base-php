@@ -8,6 +8,8 @@ This image is **the foundation for both the production cluster and the open-sour
 ghcr.io/metadist/synaplan-base-php:<tag>
 ```
 
+Published as a **multi-arch manifest list for `linux/amd64` + `linux/arm64`**, so the same tag works on x86 servers, Graviton/Ampere nodes, and Apple Silicon laptops without an emulation penalty at runtime.
+
 ---
 
 ## What is in the image
@@ -17,10 +19,57 @@ ghcr.io/metadist/synaplan-base-php:<tag>
 | FrankenPHP | `dunglas/frankenphp:php8.5-bookworm` | PHP 8.5, mod_caddy, worker mode capable |
 | PHP extensions | `pdo_mysql`, `mysqli`, `exif`, `pcntl`, `bcmath`, `gd`, `imagick`, `zip`, `sodium`, `ffi`, `grpc`, `intl`, `opcache`, `imap`, `apcu`, `igbinary`, `redis` | `redis` (phpredis) backs Symfony Messenger's Redis Streams transport (`symfony/redis-messenger`) |
 | Composer | `composer:latest` | `/usr/bin/composer` |
-| protoc | pinned `33.2` | `/usr/local/bin/protoc` (gRPC client gen) |
-| whisper.cpp | `v1.7.4`, built from source | `/usr/local/bin/whisper`, `whisper-quantize` |
+| protoc | pinned `33.2` | `/usr/local/bin/protoc` (gRPC client gen); arch-matched release asset per `TARGETARCH` |
+| whisper.cpp | `v1.7.4`, built from source | `/usr/local/bin/whisper`, `whisper-quantize`; compiled separately for each target arch |
 | ffmpeg | `ffmpeg` + `libavcodec-extra59` | `/usr/bin/ffmpeg` |
 | ImageMagick / Ghostscript / poppler-utils | bookworm packages | for PDF rasterization, image preprocessing |
+
+---
+
+## Supported architectures
+
+Every push to `main` and every tag publishes **one manifest list covering both platforms** — there are no `-amd64` / `-arm64` tag suffixes. `docker pull` and `FROM` resolve the matching platform automatically:
+
+| Platform | Typical hosts |
+|----------|---------------|
+| `linux/amd64` | production cluster nodes, GitHub-hosted runners, most CI |
+| `linux/arm64` | Apple Silicon dev machines, AWS Graviton / Ampere nodes |
+
+Pull requests build both platforms too, without pushing, so an arm64-only compile break is caught before merge.
+
+### Architecture-dependent parts of the build
+
+Two pieces are resolved per platform rather than hardcoded to x86:
+
+- **protoc** — the pinned `33.2` release asset is selected from `TARGETARCH` (BuildKit's `amd64` / `arm64`) and mapped onto protobuf's naming (`x86_64` / `aarch_64`). An unknown `TARGETARCH` fails the build loudly instead of silently installing the wrong binary.
+- **whisper.cpp** — compiled from source in a separate builder stage for each target, with `GGML_NATIVE=OFF` so the toolchain doesn't emit `-mcpu=native`. That keeps the build working under emulation and keeps the resulting binary portable across CPU generations of the same arch, at the cost of the most aggressive SIMD tuning.
+
+Everything else — the FrankenPHP base, Debian packages, PHP extensions built by `install-php-extensions`, Composer — is already multi-arch upstream.
+
+### Verifying what a tag contains
+
+```bash
+docker buildx imagetools inspect ghcr.io/metadist/synaplan-base-php:latest
+```
+
+Expect a manifest list with `linux/amd64` and `linux/arm64` entries. To pin one platform explicitly (e.g. reproducing a prod issue on an arm64 laptop):
+
+```bash
+docker pull --platform linux/amd64 ghcr.io/metadist/synaplan-base-php:latest
+docker run --rm --platform linux/amd64 ghcr.io/metadist/synaplan-base-php:latest uname -m
+```
+
+### Building locally
+
+A plain `docker build .` produces a single image for your host arch, which is what you usually want while iterating. To reproduce the CI matrix you need a Buildx builder plus QEMU for the foreign arch:
+
+```bash
+docker run --privileged --rm tonistiigi/binfmt --install all
+docker buildx create --use --name synaplan-multiarch
+docker buildx build --platform linux/amd64,linux/arm64 -t synaplan-base-php:dev .
+```
+
+Note that a multi-platform build can't be loaded into the local Docker image store — use `--push` to a registry, or build one platform at a time with `--load`. Emulated builds are also considerably slower, and the whisper.cpp compile dominates that time; the CI job leans on the GitHub Actions cache (`cache-from`/`cache-to: type=gha`) to avoid paying it on every run.
 
 ---
 
@@ -157,6 +206,8 @@ FROM ghcr.io/metadist/synaplan-base-php:<tag>
 # ... your app ...
 ```
 
+Because the base is a manifest list, this `FROM` resolves per build platform — a downstream image can go multi-arch itself just by passing `--platform linux/amd64,linux/arm64` to Buildx, with no change to the `FROM` line. If your app layers add architecture-dependent binaries of their own, select them from `TARGETARCH` the way the base does for protoc.
+
 **2. Entrypoint** — call the configure shim before exec'ing FrankenPHP (or any other PHP entrypoint):
 
 ```bash
@@ -217,6 +268,8 @@ Sanity-check inside a running container:
 
 ```bash
 docker compose exec backend bash -lc '
+    uname -m ; dpkg --print-architecture ;
+    protoc --version ; whisper --help >/dev/null && echo "whisper ok" ;
     php -i | grep -E "(opcache|jit|apcu|igbinary|grpc|redis)" | head -40 ;
     php --ri opcache | head -25 ;
     php --ri apcu | head -10 ;
@@ -225,7 +278,7 @@ docker compose exec backend bash -lc '
 '
 ```
 
-Expected: `opcache.memory_consumption => 384`, `opcache.jit_buffer_size => 128M`, `apcu` + `redis` present, `200M/220M`.
+Expected: an arch matching the host (`x86_64`/`amd64` or `aarch64`/`arm64`), a working `protoc` and `whisper` for that arch, `opcache.memory_consumption => 384`, `opcache.jit_buffer_size => 128M`, `apcu` + `redis` present, `200M/220M`.
 
 ---
 
@@ -234,7 +287,8 @@ Expected: `opcache.memory_consumption => 384`, `opcache.jit_buffer_size => 128M`
 - **App-specific preload script** — base only ships the `PHP_OPCACHE_PRELOAD` hook; generating a preload script that lists the Symfony container is downstream/follow-up.
 - **PHP-FPM tuning** — N/A, FrankenPHP doesn't use FPM.
 - **Auto-detection of CPU count** — defaults are static for predictability; ops override per node.
-- **Multi-arch (linux/arm64)** — the CI build is currently amd64 only.
+- **Platforms beyond `linux/amd64` and `linux/arm64`** — no `arm/v7`, `386`, `riscv64` or Windows builds; the Dockerfile fails fast on an unrecognized `TARGETARCH` rather than guessing.
+- **Arch-tuned whisper.cpp** — `GGML_NATIVE=OFF` trades per-CPU SIMD tuning for portability; a build optimized for one specific CPU model is a downstream concern.
 
 ---
 
