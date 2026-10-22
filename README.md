@@ -16,7 +16,7 @@ Published as a **multi-arch manifest list for `linux/amd64` + `linux/arm64`**, s
 
 | Component | Version / source | Notes |
 |-----------|------------------|-------|
-| FrankenPHP | `dunglas/frankenphp:php8.5-bookworm` | PHP 8.5, mod_caddy, worker mode capable |
+| FrankenPHP | `dunglas/frankenphp:php8.5-bookworm` | PHP 8.5, mod_caddy, worker mode capable; the build fails below PHP 8.5.12 (CVE-2026-109618 / CVE-2026-109619) |
 | PHP extensions | `pdo_mysql`, `mysqli`, `exif`, `pcntl`, `bcmath`, `gd`, `imagick`, `zip`, `sodium`, `ffi`, `grpc`, `intl`, `opcache`, `imap`, `apcu`, `igbinary`, `redis` | `redis` (phpredis) backs Symfony Messenger's Redis Streams transport (`symfony/redis-messenger`) |
 | Composer | `composer:latest` | `/usr/bin/composer` |
 | protoc | pinned `33.2` | `/usr/local/bin/protoc` (gRPC client gen); arch-matched release asset per `TARGETARCH` |
@@ -106,7 +106,7 @@ All tuning lives in `/usr/local/etc/php/conf.d/` as separate ini files so downst
 | `27-synaplan-grpc.ini` | gRPC fork-safety | `grpc.enable_fork_support=1`, `grpc.poll_strategy=epoll1` |
 | `28-synaplan-apcu.ini` | APCu in-process userland cache | `apc.shm_size=64M`, `apc.enable_cli=1` |
 | `30-synaplan-errors.ini` | error reporting + scrubbing | errors -> `/dev/stderr`, `expose_php=Off`, `zend.exception_ignore_args=1` |
-| `40-synaplan-security.ini` | runtime hardening | `allow_url_include=Off`, `enable_dl=Off`, hardened `session.*` cookie attrs |
+| `40-synaplan-security.ini` | runtime hardening | `allow_url_include=Off`, `enable_dl=Off`, hardened `session.*` cookie attrs, `session.upload_progress.enabled=0` + `fatal_error_backtraces=0` (CVE-2026-109619 defence in depth) |
 
 Sized for the **medium node profile**: ~8 cores, ~8GB RAM available to PHP, behind Cloudflare's 200MB body cap. See "Sizing for other profiles" below for tuning levers.
 

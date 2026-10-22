@@ -41,6 +41,12 @@ RUN set -eux; \
 # ============================================================================
 FROM dunglas/frankenphp:php8.5-bookworm
 
+# Minimum PHP patch level: 8.5.12 fixes CVE-2026-109618 and CVE-2026-109619
+# (unauthenticated RCE, PHP security advisory 2026-10-21). The FrankenPHP tag
+# above floats, so fail the build instead of silently shipping a vulnerable
+# patch level when upstream has not rebuilt on the fixed PHP yet.
+RUN php -r 'if (version_compare(PHP_VERSION, "8.5.12", "<")) { fwrite(STDERR, "PHP >= 8.5.12 required (CVE-2026-109618 / CVE-2026-109619), got " . PHP_VERSION . PHP_EOL); exit(1); }'
+
 # Install runtime and build dependencies, build PHP extensions, then cleanup
 # This is done in a single RUN to minimize layer size
 RUN set -eux; \
