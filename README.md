@@ -50,10 +50,11 @@ Because a per-arch job cannot push a shared tag without clobbering the other, th
 
 ### Architecture-dependent parts of the build
 
-Two pieces are resolved per platform rather than hardcoded to x86:
+Three pieces are resolved per platform rather than hardcoded to x86:
 
 - **protoc** — the pinned `33.2` release asset is selected from `TARGETARCH` (BuildKit's `amd64` / `arm64`) and mapped onto protobuf's naming (`x86_64` / `aarch_64`). An unknown `TARGETARCH` fails the build loudly instead of silently installing the wrong binary.
 - **whisper.cpp** — compiled from source in a separate builder stage for each target, with `GGML_NATIVE=OFF` so the toolchain doesn't emit `-mcpu=native`. That keeps the resulting binary portable across CPU generations of the same arch (and keeps an emulated local build working), at the cost of the most aggressive SIMD tuning.
+- **`opcache.huge_code_pages`** — `1` on amd64. The arm64 image also installs `21-synaplan-arm64.ini`, which sets it to `0`. Huge pages drop Branch Target Identification landing pads, so a few percent of PHP starts on aarch64 die with `SIGILL`. The build checks the effective value and fails if the arch and the setting disagree.
 
 Everything else — the FrankenPHP base, Debian packages, PHP extensions built by `install-php-extensions`, Composer — is already multi-arch upstream.
 
@@ -101,7 +102,8 @@ All tuning lives in `/usr/local/etc/php/conf.d/` as separate ini files so downst
 | File | Purpose | Headline values |
 |------|---------|-----------------|
 | `10-synaplan-runtime.ini` | uploads, memory, exec time, pcre.jit | `memory_limit=512M`, `upload_max_filesize=200M`, `post_max_size=220M`, `max_execution_time=300`, `pcre.jit=1` |
-| `20-synaplan-opcache.ini` | OPcache + tracing JIT | `memory_consumption=384`, `max_accelerated_files=30000`, `interned_strings_buffer=32`, `jit=tracing`, `jit_buffer_size=128M`, `huge_code_pages=1`, `validate_timestamps=0` |
+| `20-synaplan-opcache.ini` | OPcache + tracing JIT | `memory_consumption=384`, `max_accelerated_files=30000`, `interned_strings_buffer=32`, `jit=tracing`, `jit_buffer_size=128M`, `huge_code_pages=1` (amd64 only), `validate_timestamps=0` |
+| `21-synaplan-arm64.ini` | arm64 OPcache override | `huge_code_pages=0`. Present only in the `linux/arm64` image; huge pages SIGILL a fraction of PHP starts on aarch64 with BTI |
 | `25-synaplan-realpath.ini` | realpath cache | `realpath_cache_size=4096k`, `realpath_cache_ttl=600` |
 | `27-synaplan-grpc.ini` | gRPC fork-safety | `grpc.enable_fork_support=1`, `grpc.poll_strategy=epoll1` |
 | `28-synaplan-apcu.ini` | APCu in-process userland cache | `apc.shm_size=64M`, `apc.enable_cli=1` |

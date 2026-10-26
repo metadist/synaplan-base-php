@@ -166,6 +166,26 @@ ENV WHISPER_BINARY=/usr/local/bin/whisper \
 # full env-var override surface and worker-mode setup.
 # ============================================================================
 COPY conf.d/ /usr/local/etc/php/conf.d/
+# opcache.huge_code_pages copies PHP's text segment onto huge pages. On
+# arm64 with Branch Target Identification that copy drops the BTI landing
+# pads, and a few percent of PHP starts die with SIGILL. Install the
+# override only for that arch (TARGETARCH=arm64 is uname -m aarch64).
+# amd64 keeps huge_code_pages=1 from 20-synaplan-opcache.ini.
+# https://github.com/metadist/synaplan-base-php/issues/17
+COPY arch/21-synaplan-arm64.ini /tmp/21-synaplan-arm64.ini
+RUN set -eux; \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        mv /tmp/21-synaplan-arm64.ini /usr/local/etc/php/conf.d/21-synaplan-arm64.ini; \
+        expect=off; \
+    else \
+        rm -f /tmp/21-synaplan-arm64.ini; \
+        expect=on; \
+    fi; \
+    # opcache.file_cache=/tmp/opcache fatals (exit 254) until that directory
+    # exists. The owned directory is created in the runtime-setup layer below.
+    mkdir -p /tmp/opcache; \
+    actual="$(php -r 'echo filter_var(ini_get("opcache.huge_code_pages"), FILTER_VALIDATE_BOOLEAN) ? "on" : "off";')"; \
+    test "$actual" = "$expect"
 COPY templates/ /usr/local/etc/php/templates/
 COPY bin/synaplan-php-configure /usr/local/bin/synaplan-php-configure
 COPY README.md LICENSE NOTICE /usr/local/share/synaplan-base-php/
