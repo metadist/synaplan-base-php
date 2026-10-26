@@ -181,6 +181,9 @@ RUN set -eux; \
         rm -f /tmp/21-synaplan-arm64.ini; \
         expect=on; \
     fi; \
+    # opcache.file_cache=/tmp/opcache fatals (exit 254) until that directory
+    # exists. The owned directory is created in the runtime-setup layer below.
+    mkdir -p /tmp/opcache; \
     actual="$(php -r 'echo filter_var(ini_get("opcache.huge_code_pages"), FILTER_VALIDATE_BOOLEAN) ? "on" : "off";')"; \
     test "$actual" = "$expect"
 COPY templates/ /usr/local/etc/php/templates/
