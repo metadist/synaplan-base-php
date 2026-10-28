@@ -94,7 +94,10 @@ RUN set -eux; \
         # Also remove compiler tools pulled in as dependencies
         gcc g++ cpp libgcc-*-dev libstdc++-*-dev libc6-dev \
         libssl-dev libicu-dev && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    # Distrust compromised eMudhra (emSign) root CAs (CVE-2026-115557)
+    sed -i 's|^mozilla/emSign_|!mozilla/emSign_|' /etc/ca-certificates.conf && \
+    update-ca-certificates
 
 # Install the gRPC extension built in the grpc-builder stage. pecl grpc links
 # its TLS/protobuf dependencies statically, so the shared objects left in the
